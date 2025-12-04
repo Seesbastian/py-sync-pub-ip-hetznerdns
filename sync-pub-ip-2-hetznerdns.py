@@ -4,16 +4,16 @@ from requests import get
 import os
 
 # --- Konfiguration ---
-HETZNER_DNS_API_TOKEN = "x"
+# Hier bitte 'x' durch echte Werte ersetzen
+HETZNER_DNS_API_TOKEN = "x" 
 DOMAIN_NAME = "x" # Stamm-Domain (z.B. "meinedomain.de")
-
-# --- NEUE KONFIGURATION ---
-
-# Gib die Zone ID EINMALIG an, die für alle Subdomains verwendet werden soll.
 DEFAULT_ZONE_ID = "x" 
 
-# Liste der Subdomain-Namen, die aktualisiert werden sollen (z.B. "nc" für nc.meinedomain.de)
+# Liste der Subdomain-Namen, die aktualisiert/erstellt werden sollen
 SUBDOMAIN_NAMES = [
+    "nc",
+    "img",
+    "dns",
     "bla",
     "bla2",
     "bla3",
@@ -25,8 +25,6 @@ SUBDOMAIN_NAMES = [
 ]
 
 # --- DYNAMISCHE ERSTELLUNG DER RECORD-LISTE ---
-
-# Generiere die finale Liste der Records für die Hauptlogik
 DNS_RECORDS_TO_UPDATE = []
 for name in SUBDOMAIN_NAMES:
     DNS_RECORDS_TO_UPDATE.append({
@@ -34,7 +32,6 @@ for name in SUBDOMAIN_NAMES:
         "zone_id": DEFAULT_ZONE_ID
     })
 
-# Prüfung des Tokens (könnte auch über os.environ erfolgen, wie ursprünglich angedeutet)
 if not HETZNER_DNS_API_TOKEN or HETZNER_DNS_API_TOKEN == "x":
     print("Fehler: HETZNER_DNS_API_TOKEN ist nicht gesetzt oder der Platzhalter 'x' ist noch enthalten.")
     exit(1)
@@ -44,7 +41,6 @@ if not HETZNER_DNS_API_TOKEN or HETZNER_DNS_API_TOKEN == "x":
 def get_public_ip():
     """Ruft die aktuelle öffentliche IPv4-Adresse ab."""
     try:
-        # Nutzung einer zuverlässigen öffentlichen IP-API
         ip = get('https://api.ipify.org').content.decode('utf8')
         return ip
     except requests.RequestException as e:
@@ -71,6 +67,7 @@ def get_dns_record_details(record_data, api_token):
 
         for record in records:
             if record["name"] == record_name and record["type"] == "A":
+                # Record gefunden
                 return {"id": record["id"], "value": record["value"]}
 
         return None # Record wurde nicht gefunden
@@ -80,7 +77,7 @@ def get_dns_record_details(record_data, api_token):
         return None
 
 def update_dns_record(record_id, record_name, zone_id, api_token, new_ip):
-    """Aktualisiert einen DNS-Record in Hetzner DNS."""
+    """Aktualisiert einen bestehenden DNS-Record in Hetzner DNS (PUT Request)."""
     url = f"https://dns.hetzner.com/api/v1/records/{record_id}"
     headers = {
         "Content-Type": "application/json",
@@ -96,17 +93,42 @@ def update_dns_record(record_id, record_name, zone_id, api_token, new_ip):
     try:
         response = requests.put(url, headers=headers, data=json.dumps(data))
         response.raise_for_status()
-
-        print(f"DNS-Record für '{record_name}.{DOMAIN_NAME}' erfolgreich aktualisiert!")
-        print(f"  Response HTTP Status Code: {response.status_code}")
-        # Response Body entfernt, da unnötig für den regulären Output
-        # print(f"  Response HTTP Response Body: {response.json()}") 
-
+        print(f"✅ DNS-Record für '{record_name}.{DOMAIN_NAME}' erfolgreich AKTUALISIERT!")
     except requests.exceptions.RequestException as e:
-        print(f"Fehler beim HTTP Request für '{record_name}.{DOMAIN_NAME}': {e}")
+        print(f"❌ Fehler beim HTTP Request (UPDATE) für '{record_name}.{DOMAIN_NAME}': {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"  Fehlerdetails: {e.response.text}")
+        return False
+    return True
 
+
+def create_dns_record(record_name, zone_id, api_token, new_ip):
+    """Erstellt einen neuen DNS-Record in Hetzner DNS (POST Request)."""
+    url = "https://dns.hetzner.com/api/v1/records"
+    headers = {
+        "Content-Type": "application/json",
+        "Auth-API-Token": api_token
+    }
+    data = {
+        "value": new_ip,
+        "ttl": 600,
+        "type": "A",
+        "name": record_name,
+        "zone_id": zone_id
+    }
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response.raise_for_status()
+        print(f"➕ DNS-Record für '{record_name}.{DOMAIN_NAME}' erfolgreich ERSTELLT!")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Fehler beim HTTP Request (CREATE) für '{record_name}.{DOMAIN_NAME}': {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  Fehlerdetails: {e.response.text}")
+        return False
+    return True
+
+
+# --- Hauptlogik (mit neuer Create-Funktion) ---
 if __name__ == "__main__":
     current_public_ip = get_public_ip()
 
@@ -114,20 +136,24 @@ if __name__ == "__main__":
         print("Konnte die öffentliche IP-Adresse nicht ermitteln. DNS-Updates werden übersprungen.")
         exit(1)
 
-    print(f"Aktuelle öffentliche IP-Adresse: {current_public_ip}")
+    print(f"Aktuelle öffentliche IP-Adresse: {current_public_ip}\n---")
 
     for record_info in DNS_RECORDS_TO_UPDATE:
         record_name = record_info['name']
         zone_id = record_info['zone_id']
+        full_name = f"'{record_name}.{DOMAIN_NAME}'"
 
-        print(f"\nÜberprüfe Record für '{record_name}.{DOMAIN_NAME}'...")
+        print(f"Überprüfe Record für {full_name}...")
 
         # 1. Aktuellen DNS-Eintrag abrufen
         dns_record_details = get_dns_record_details(record_info, HETZNER_DNS_API_TOKEN)
 
         if not dns_record_details:
-            print(f"  [WARNUNG] Record '{record_name}.{DOMAIN_NAME}' wurde nicht in Hetzner DNS gefunden. Überspringe.")
-            continue
+            # --- NEUE LOGIK: RECORD NICHT GEFUNDEN -> ERSTELLEN ---
+            print(f"  [INFO] Record {full_name} wurde NICHT in Hetzner DNS gefunden.")
+            print(f"  Versuche, neuen A-Record mit IP {current_public_ip} zu erstellen...")
+            create_dns_record(record_name, zone_id, HETZNER_DNS_API_TOKEN, current_public_ip)
+            continue # Springe zum nächsten Record
 
         current_dns_ip = dns_record_details['value']
         record_id = dns_record_details['id']
