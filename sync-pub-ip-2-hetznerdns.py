@@ -5,56 +5,46 @@ import os
 
 # --- Konfiguration ---
 HETZNER_DNS_API_TOKEN = "x"
-DOMAIN_NAME = "x"
+DOMAIN_NAME = "x" # Stamm-Domain (z.B. "meinedomain.de")
 
-if not HETZNER_DNS_API_TOKEN:
-    print("Fehler: HETZNER_DNS_API_TOKEN Umgebungsvariable ist nicht gesetzt.")
-    print("Bitte setze sie z.B. mit: export HETZNER_DNS_API_TOKEN='DEIN_TOKEN'")
-    exit(1)
+# --- NEUE KONFIGURATION ---
 
-# Liste der zu aktualisierenden DNS-Records
-# Hinweis: Du benötigst hier nur noch den Namen und die Zone ID.
-# Die Record-ID wird jetzt dynamisch ermittelt.
-DNS_RECORDS_TO_UPDATE = [
-    {
-        "name": "bla",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla2",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla3",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla4",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla5",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla6",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla7",
-        "zone_id": "x"
-    },
-    {
-        "name": "bla8",
-        "zone_id": "x"
-    },
+# Gib die Zone ID EINMALIG an, die für alle Subdomains verwendet werden soll.
+DEFAULT_ZONE_ID = "x" 
+
+# Liste der Subdomain-Namen, die aktualisiert werden sollen (z.B. "nc" für nc.meinedomain.de)
+SUBDOMAIN_NAMES = [
+    "bla",
+    "bla2",
+    "bla3",
+    "bla4",
+    "bla5",
+    "bla6",
+    "bla7",
+    "bla8",
 ]
+
+# --- DYNAMISCHE ERSTELLUNG DER RECORD-LISTE ---
+
+# Generiere die finale Liste der Records für die Hauptlogik
+DNS_RECORDS_TO_UPDATE = []
+for name in SUBDOMAIN_NAMES:
+    DNS_RECORDS_TO_UPDATE.append({
+        "name": name,
+        "zone_id": DEFAULT_ZONE_ID
+    })
+
+# Prüfung des Tokens (könnte auch über os.environ erfolgen, wie ursprünglich angedeutet)
+if not HETZNER_DNS_API_TOKEN or HETZNER_DNS_API_TOKEN == "x":
+    print("Fehler: HETZNER_DNS_API_TOKEN ist nicht gesetzt oder der Platzhalter 'x' ist noch enthalten.")
+    exit(1)
 
 # --- Funktionen ---
 
 def get_public_ip():
     """Ruft die aktuelle öffentliche IPv4-Adresse ab."""
     try:
+        # Nutzung einer zuverlässigen öffentlichen IP-API
         ip = get('https://api.ipify.org').content.decode('utf8')
         return ip
     except requests.RequestException as e:
@@ -109,14 +99,14 @@ def update_dns_record(record_id, record_name, zone_id, api_token, new_ip):
 
         print(f"DNS-Record für '{record_name}.{DOMAIN_NAME}' erfolgreich aktualisiert!")
         print(f"  Response HTTP Status Code: {response.status_code}")
-        print(f"  Response HTTP Response Body: {response.json()}")
+        # Response Body entfernt, da unnötig für den regulären Output
+        # print(f"  Response HTTP Response Body: {response.json()}") 
 
     except requests.exceptions.RequestException as e:
         print(f"Fehler beim HTTP Request für '{record_name}.{DOMAIN_NAME}': {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"  Fehlerdetails: {e.response.text}")
 
-# --- Hauptlogik ---
 if __name__ == "__main__":
     current_public_ip = get_public_ip()
 
